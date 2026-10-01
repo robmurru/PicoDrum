@@ -13,8 +13,8 @@ filters: it plays your samples, cleanly and on time.
 Made by **muR Lab**. It comes in two formats with the same board and the same
 firmware: **1U, 20HP** and **3U, 6HP**.
 
-The first batch, the **launch edition**, ships with the original PicoDrum
-panel; everything else, board, firmware and features, is identical to a
+The module was called **PicoDrum** until September 2026. The first batch,
+the **launch edition**, ships with the original PicoDrum panel; everything else, board, firmware and features, is identical to a
 muRDrum. The same firmware files run on both.
 
 ## Features
