@@ -3,7 +3,7 @@
 *Formerly PicoDrum.*
 
 <p align="center">
-  <img src="docs/murdrum_product_shot.png" alt="muRDrum in both formats: 1U, 20HP on the left, 3U, 6HP on the right" width="560">
+  <img src="docs/murdrum_product_shot.jpg" alt="muRDrum in both formats: 1U, 20HP on the left, 3U, 6HP on the right" width="560">
 </p>
 
 A polyphonic drum sample player for Eurorack, built around the Raspberry Pi
