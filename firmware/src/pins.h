@@ -42,12 +42,12 @@
 // else in the firmware knows about it.
 //
 // Fed straight through by default (2026-09-08). The breadboard wired CLK on
-// GP10 and DT on GP11 and needed the channels swapped here; the PicoDrum board
+// GP10 and DT on GP11 and needed the channels swapped here; the muRDrum board
 // wires them the other way round (ROT_CLK on GP11, ROT_DT on GP10), so the board's swap and the software one cancelled and the knob
 // turned backwards on the real module. Undoing the swap here is what makes the
 // board decode CW as CW.
 //
-// ENCODER_REVERSED (set with PICODRUM_ENC=REV, see build.sh) swaps them back.
+// ENCODER_REVERSED (set with MURDRUM_ENC=REV, see build.sh) swaps them back.
 // It exists because the EC11 part itself is not standardised: the A and C/B
 // terminals of the outer pair are not marked on most of the parts in
 // circulation, and a unit soldered the other way round - or simply sourced

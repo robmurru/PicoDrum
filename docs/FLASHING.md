@@ -1,13 +1,16 @@
-# Flashing PicoDrum
+# Flashing muRDrum
 
 ## Which file
 
+The same files run on every module, including the launch edition with the
+original PicoDrum panel. Releases before the rename called them `picodrum_…`.
+
 | File | Panel | Encoder |
 |---|---|---|
-| `picodrum_1U_enc-std.uf2` | 1U, 20HP, 0.91" 128x32 display | standard |
-| `picodrum_1U_enc-rev.uf2` | 1U, 20HP, 0.91" 128x32 display | reversed |
-| `picodrum_3U_enc-std.uf2` | 3U, 6HP, 0.96" 128x64 display | standard |
-| `picodrum_3U_enc-rev.uf2` | 3U, 6HP, 0.96" 128x64 display | reversed |
+| `murdrum_1U_enc-std.uf2` | 1U, 20HP, 0.91" 128x32 display | standard |
+| `murdrum_1U_enc-rev.uf2` | 1U, 20HP, 0.91" 128x32 display | reversed |
+| `murdrum_3U_enc-std.uf2` | 3U, 6HP, 0.96" 128x64 display | standard |
+| `murdrum_3U_enc-rev.uf2` | 3U, 6HP, 0.96" 128x64 display | reversed |
 
 **The panel.** Match it to the display fitted on your module. A 1U build on the
 3U display draws only in the top half, and a 3U build on the 1U display loses
@@ -35,7 +38,7 @@ With [picotool](https://github.com/raspberrypi/picotool) you can do the same
 with one command:
 
 ```sh
-picotool load -x picodrum_1U_enc-std.uf2
+picotool load -x murdrum_1U_enc-std.uf2
 ```
 
 If the module is already running, add `-f` and you do not need to hold
@@ -50,7 +53,7 @@ BOOTSEL.
 
 If the module shows `NO LIBRARY`, it has no samples yet. Load a library with
 the sample loader at [murlab.it/loader](https://murlab.it/loader), or flash the bundled kits by dragging
-`picodrum_starter_kits.uf2` (attached to every release, and the same file as
+`murdrum_starter_kits.uf2` (attached to every release, and the same file as
 `kits/sample_lib.uf2`) onto the `RPI-RP2` drive, the same way as the firmware.
 
 Loading a library replaces the samples only. Presets store positions in the

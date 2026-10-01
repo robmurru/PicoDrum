@@ -7,7 +7,7 @@
 // redraw identical pixels would be core0 time thrown away.
 //
 // The panel is picked at compile time with OLED_PANEL_128X64 (see
-// PICODRUM_PANEL in CMakeLists.txt / PANEL in build.sh), not at runtime: it
+// MURDRUM_PANEL in CMakeLists.txt / PANEL in build.sh), not at runtime: it
 // is fixed per format, like the rest of "one board, two panels": the 3U
 // panel carries a 0.96" 128x64 display because the 1U's 0.91" 128x32 would
 // read sideways once the board stands upright behind a 6HP panel.

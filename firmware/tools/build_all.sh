@@ -9,8 +9,9 @@
 # and the muR Lab site call the panels that way, and "6HP" next to "1U" mixes a
 # width with a height. PANEL=6HP stays the build option's name, only the
 # output is renamed. The four names are listed verbatim in the manual and
-# carry no version (the release tag does), so they must not change:
-#   picodrum_<1U|3U>_enc-<std|rev>.uf2
+# carry no version (the release tag does), so they must not change. They
+# changed once, picodrum_ -> murdrum_, when the module was renamed (2026-10-01):
+#   murdrum_<1U|3U>_enc-<std|rev>.uf2
 #
 # The encoder direction is a build option and not a setting because the
 # firmware cannot tell the two cases apart: the EC11's outer pair is unmarked
@@ -35,7 +36,7 @@ for panel in 1U 6HP; do
 
         format="$panel"
         [[ "$panel" == "6HP" ]] && format="3U"
-        name="picodrum_${format}_enc-$(echo "$enc" | tr 'A-Z' 'a-z').uf2"
+        name="murdrum_${format}_enc-$(echo "$enc" | tr 'A-Z' 'a-z').uf2"
         cp "$src/sampleplayer.uf2" "$OUT/$name"
     done
 done

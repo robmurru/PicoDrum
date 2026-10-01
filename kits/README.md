@@ -1,4 +1,4 @@
-# PicoDrum starter kits
+# muRDrum starter kits
 
 Three kits of eight slots, **synthesised from scratch**, ready to load.
 

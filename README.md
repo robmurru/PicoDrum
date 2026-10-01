@@ -1,7 +1,9 @@
-# PicoDrum
+# muRDrum
+
+*Formerly PicoDrum.*
 
 <p align="center">
-  <img src="docs/picodrum_product_shot.jpg" alt="PicoDrum in both formats: 1U, 20HP on the left, 3U, 6HP on the right" width="560">
+  <img src="docs/murdrum_product_shot.png" alt="muRDrum in both formats: 1U, 20HP on the left, 3U, 6HP on the right" width="560">
 </p>
 
 A polyphonic drum sample player for Eurorack, built around the Raspberry Pi
@@ -10,6 +12,11 @@ filters: it plays your samples, cleanly and on time.
 
 Made by **muR Lab**. It comes in two formats with the same board and the same
 firmware: **1U, 20HP** and **3U, 6HP**.
+
+The module was called **PicoDrum** until October 2026. The first batch, the
+**launch edition**, ships with the original PicoDrum panel; everything else,
+board, firmware and features, is identical to a muRDrum. The same firmware
+files run on both.
 
 ## Features
 
@@ -42,14 +49,15 @@ a worked example.
 ## Firmware
 
 Release UF2s are attached to each [GitHub release](../../releases). There are
-four, and the names stay the same from one release to the next:
+four, and the names stay the same from one release to the next (they were
+`murdrum_…` before the rename):
 
 | File | Panel | Encoder |
 |---|---|---|
-| `picodrum_1U_enc-std.uf2` | 1U, 20HP, 0.91" display | standard |
-| `picodrum_1U_enc-rev.uf2` | 1U, 20HP, 0.91" display | reversed |
-| `picodrum_3U_enc-std.uf2` | 3U, 6HP, 0.96" display | standard |
-| `picodrum_3U_enc-rev.uf2` | 3U, 6HP, 0.96" display | reversed |
+| `murdrum_1U_enc-std.uf2` | 1U, 20HP, 0.91" display | standard |
+| `murdrum_1U_enc-rev.uf2` | 1U, 20HP, 0.91" display | reversed |
+| `murdrum_3U_enc-std.uf2` | 3U, 6HP, 0.96" display | standard |
+| `murdrum_3U_enc-rev.uf2` | 3U, 6HP, 0.96" display | reversed |
 
 `std` and `rev` match the S / R mark on the back of the panel. See
 [`docs/FLASHING.md`](docs/FLASHING.md) for how to flash, and what to do if
@@ -85,7 +93,8 @@ tools/run_tests.sh
 
 ## Hardware
 
-The board's schematic is in [`hardware/PicoDrum_schematic.pdf`](hardware/PicoDrum_schematic.pdf).
+The board's schematic is in [`hardware/muRDrum_schematic.pdf`](hardware/muRDrum_schematic.pdf)
+(drawn when the module was still PicoDrum, so that is the name on it).
 The main parts:
 
 - Raspberry Pi Pico 2 (RP2350)
@@ -113,7 +122,7 @@ them, anything panned hard to the other side is silent.
   option) any later version (GPL-3.0-or-later), see [`LICENSE`](LICENSE)
 - **Bundled kits** (`kits/`): CC0 1.0, see [`kits/LICENSE`](kits/LICENSE)
 - **Schematic** (`hardware/`): CC BY-SA 4.0, see [`hardware/LICENSE`](hardware/LICENSE)
-- The **muR Lab** and **PicoDrum** names and the muR Lab logo are not licensed
+- The **muR Lab**, **muRDrum** and **PicoDrum** names and the muR Lab logo are not licensed
   under the GPL
 
 Third-party code included here:

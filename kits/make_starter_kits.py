@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Synthesises the PicoDrum starter library: three kits of eight slots, from
+Synthesises the muRDrum starter library: three kits of eight slots, from
 scratch.
 
 Nothing here is sampled from anything. Every sound is built out of oscillators,

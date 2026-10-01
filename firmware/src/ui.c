@@ -1059,8 +1059,8 @@ static void render_config(uint32_t now_ms) {
     draw_hint(cfg_hint());
 }
 
-#define SPLASH_TITLE     "PicoDrum"
-#define SPLASH_TITLE_LEN 8  // strlen(SPLASH_TITLE), kept honest by the assert below
+#define SPLASH_TITLE     "muRDrum"
+#define SPLASH_TITLE_LEN 7  // strlen(SPLASH_TITLE), kept honest by the assert below
 #define SPLASH_GAP       6  // between the logo and the product name
 #define SPLASH_ROW_GAP   3  // between the top row and the copyright line
 #define SPLASH_GLYPH_H   7  // font5x7's glyph height, see ssd1306.c
@@ -1077,7 +1077,7 @@ _Static_assert(sizeof(SPLASH_TITLE) - 1 == SPLASH_TITLE_LEN,
 // for this one fixed string - see tools/make_logo.py. 128x64 still draws it
 // with font5x7, not asked to match yet.
 //
-// 128x32 also gets "PicoDrum" at 2x: the logo is already close to the
+// 128x32 also gets "muRDrum" at 2x: the logo is already close to the
 // height this panel can spare it (see the row-height assert below), so the
 // width left over next to it - a near-square logo cannot grow into it
 // without also growing taller - is spent on the title's weight instead.
@@ -1112,7 +1112,7 @@ _Static_assert(LOGO_W + SPLASH_GAP + SPLASH_TITLE_W <= OLED_W,
 _Static_assert(SPLASH_ROW_B_W <= OLED_W,
                "splash copyright wider than the panel");
 
-// Two rows: [logo][gap]["PicoDrum"] on top, the copyright right-aligned
+// Two rows: [logo][gap]["muRDrum"] on top, the copyright right-aligned
 // below it. The logo (one bitmap, the chip with the crescent/dot/"uR" cut
 // into its own body exactly as authored - see tools/make_logo.py) and the
 // title are both vertically centred within the top row's own band, so

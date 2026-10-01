@@ -51,24 +51,24 @@ pico_add_extra_outputs(sampleplayer)
 
 # Which panel this build is for: 1U/20HP (0.91" 128x32) or 3U/6HP (0.96"
 # 128x64). Fixed per format, picked at compile time, not read at runtime.
-set(PICODRUM_PANEL "1U" CACHE STRING "Panel format: 1U (128x32) or 6HP (128x64)")
-set_property(CACHE PICODRUM_PANEL PROPERTY STRINGS 1U 6HP)
-if(PICODRUM_PANEL STREQUAL "6HP")
+set(MURDRUM_PANEL "1U" CACHE STRING "Panel format: 1U (128x32) or 6HP (128x64)")
+set_property(CACHE MURDRUM_PANEL PROPERTY STRINGS 1U 6HP)
+if(MURDRUM_PANEL STREQUAL "6HP")
     target_compile_definitions(sampleplayer PRIVATE OLED_PANEL_128X64)
-elseif(NOT PICODRUM_PANEL STREQUAL "1U")
-    message(FATAL_ERROR "PICODRUM_PANEL must be 1U or 6HP, got '${PICODRUM_PANEL}'")
+elseif(NOT MURDRUM_PANEL STREQUAL "1U")
+    message(FATAL_ERROR "MURDRUM_PANEL must be 1U or 6HP, got '${MURDRUM_PANEL}'")
 endif()
 
 # Which way the encoder turns. The EC11's outer pair is not marked and is not
 # consistent between makers, so a knob that decodes CW as CCW is a part, not a
 # wiring fault - see pins.h. REV swaps the two quadrature channels handed to
 # the decoder; nothing else in the firmware changes.
-set(PICODRUM_ENC "STD" CACHE STRING "Encoder direction: STD or REV")
-set_property(CACHE PICODRUM_ENC PROPERTY STRINGS STD REV)
-if(PICODRUM_ENC STREQUAL "REV")
+set(MURDRUM_ENC "STD" CACHE STRING "Encoder direction: STD or REV")
+set_property(CACHE MURDRUM_ENC PROPERTY STRINGS STD REV)
+if(MURDRUM_ENC STREQUAL "REV")
     target_compile_definitions(sampleplayer PRIVATE ENCODER_REVERSED)
-elseif(NOT PICODRUM_ENC STREQUAL "STD")
-    message(FATAL_ERROR "PICODRUM_ENC must be STD or REV, got '${PICODRUM_ENC}'")
+elseif(NOT MURDRUM_ENC STREQUAL "STD")
+    message(FATAL_ERROR "MURDRUM_ENC must be STD or REV, got '${MURDRUM_ENC}'")
 endif()
 
 # Build identifier shown on the ABOUT page: the git short hash (+ "-dirty"),
