@@ -93,8 +93,7 @@ tools/run_tests.sh
 
 ## Hardware
 
-The board's schematic is in [`hardware/muRDrum_schematic.pdf`](hardware/muRDrum_schematic.pdf)
-(drawn when the module was still PicoDrum, so that is the name on it).
+The board's schematic is in [`hardware/muRDrum_schematic.pdf`](hardware/muRDrum_schematic.pdf).
 The main parts:
 
 - Raspberry Pi Pico 2 (RP2350)
