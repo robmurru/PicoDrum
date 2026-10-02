@@ -31,6 +31,9 @@ firmware files run on both.
   default, with slots on the General MIDI drum notes
 - **Stereo out** with a **pan per slot**. At centre a slot sounds exactly as it
   would in mono
+- **Level per slot**, from 0 dB down to −24 dB in 3 dB steps, or off
+- **Hat choke**, optional: the closed and open hi-hat cut each other, the way
+  one cymbal does
 - **Velocity response** in four curves: OFF, LOW, MID, HIGH
 - **8 user presets**, saved to flash with the settings
 - One encoder and a small OLED. Every function is three gestures: turn,
@@ -50,7 +53,7 @@ a worked example.
 
 Release UF2s are attached to each [GitHub release](../../releases). There are
 four, and the names stay the same from one release to the next (they were
-`murdrum_…` before the rename):
+`picodrum_…` before the rename):
 
 | File | Panel | Encoder |
 |---|---|---|

@@ -88,6 +88,7 @@ _Static_assert(CELL_X0 + NUM_SLOTS * CELL_STEP <= OLED_W,
 enum {
     CFG_GROUP_TOP = 0,
     CFG_GROUP_NOTES,
+    CFG_GROUP_LEVEL,
     CFG_GROUP_PAN,
 };
 
@@ -190,39 +191,85 @@ void ui_note_name(uint8_t note, char *out) {
 // Every entry is an integer with a range and a step, which is what keeps the
 // editing code to one function instead of one per setting.
 //
-// Two levels since phase4. The top list holds the six global settings,
-// RESTORE, and two groups, NOTES and PAN, each a sublist of eight per-slot
-// entries. Flat, the page would have been 23 entries long with sixteen of
-// them the same eight roles twice over; grouped, the top list is nine and
-// every sublist reads as one question asked of each slot. It costs no new
-// gesture: a press on a group opens it, as a press on an entry edits it, and
-// a long press inside a group goes back up one level instead of leaving.
+// Two levels since phase4. The top list holds the seven global settings,
+// the two resets, and three groups, NOTES, LEVEL and PAN (LEVEL since 1.1),
+// each a sublist of eight per-slot entries. Flat, the page would have been 33
+// entries long with 24 of them the same eight roles three times over;
+// grouped, the top list is twelve and every sublist reads as one question
+// asked of each slot. It costs no new gesture: a press on a group opens it, as a
+// press on an entry edits it, and a long press inside a group goes back up
+// one level instead of leaving. LEVEL sits before PAN because that is the
+// order of a mixer channel.
+//
+// The resets are two entries since 1.1, not one RESTORE DEFAULTS: putting the
+// configuration back and throwing the presets away are different decisions,
+// and one entry doing both made the first cost the second.
 
 enum {
     CFG_MIDI_CH = 0,
     CFG_GAIN,
     CFG_VELOCITY,
     CFG_DYNAMICS,
+    CFG_HAT_CHOKE,
     CFG_CONTRAST,
     CFG_BOOT,
     CFG_NOTE0,
     CFG_PAN0 = CFG_NOTE0 + NUM_SLOTS,
-    CFG_RESTORE = CFG_PAN0 + NUM_SLOTS,
-    // Not settings: the two group rows of the top list. A press opens them.
+    CFG_LEVEL0 = CFG_PAN0 + NUM_SLOTS,
+    CFG_RESET_SETTINGS = CFG_LEVEL0 + NUM_SLOTS,
+    CFG_CLEAR_PRESETS,
+    // Not settings: the three group rows of the top list. A press opens them.
     CFG_OPEN_NOTES,
+    CFG_OPEN_LEVEL,
     CFG_OPEN_PAN,
     CFG_COUNT,
 };
 
 static const uint8_t CFG_TOP[] = {
-    CFG_MIDI_CH, CFG_GAIN, CFG_VELOCITY, CFG_DYNAMICS, CFG_CONTRAST, CFG_BOOT,
-    CFG_OPEN_NOTES, CFG_OPEN_PAN, CFG_RESTORE,
+    CFG_MIDI_CH, CFG_GAIN, CFG_VELOCITY, CFG_DYNAMICS, CFG_HAT_CHOKE,
+    CFG_CONTRAST, CFG_BOOT,
+    CFG_OPEN_NOTES, CFG_OPEN_LEVEL, CFG_OPEN_PAN,
+    CFG_RESET_SETTINGS, CFG_CLEAR_PRESETS,
 };
 #define CFG_TOP_LEN ((uint32_t)(sizeof CFG_TOP / sizeof CFG_TOP[0]))
 
 static bool cfg_is_note(uint32_t e) { return e >= CFG_NOTE0 && e < CFG_NOTE0 + NUM_SLOTS; }
 static bool cfg_is_pan(uint32_t e)  { return e >= CFG_PAN0 && e < CFG_PAN0 + NUM_SLOTS; }
-static bool cfg_is_group(uint32_t e) { return e == CFG_OPEN_NOTES || e == CFG_OPEN_PAN; }
+static bool cfg_is_level(uint32_t e) { return e >= CFG_LEVEL0 && e < CFG_LEVEL0 + NUM_SLOTS; }
+// The NO/YES entries: an answer, not a setting, acted on when confirmed.
+static bool cfg_is_reset(uint32_t e) {
+    return e == CFG_RESET_SETTINGS || e == CFG_CLEAR_PRESETS;
+}
+
+static bool cfg_is_group(uint32_t e) {
+    return e == CFG_OPEN_NOTES || e == CFG_OPEN_LEVEL || e == CFG_OPEN_PAN;
+}
+
+// A group's row in the top list and the first of its per-slot entries, and
+// back: the three tables that opening and leaving a group go through.
+static uint32_t cfg_group_row(uint32_t g) {
+    switch (g) {
+        case CFG_GROUP_NOTES: return CFG_OPEN_NOTES;
+        case CFG_GROUP_LEVEL: return CFG_OPEN_LEVEL;
+        default:              return CFG_OPEN_PAN;
+    }
+}
+
+static uint32_t cfg_row_group(uint32_t e) {
+    switch (e) {
+        case CFG_OPEN_NOTES: return CFG_GROUP_NOTES;
+        case CFG_OPEN_LEVEL: return CFG_GROUP_LEVEL;
+        default:             return CFG_GROUP_PAN;
+    }
+}
+
+// The slot a per-slot entry belongs to, whichever group it is in.
+static uint8_t cfg_slot_of(uint32_t e) {
+    if (cfg_is_level(e)) {
+        return (uint8_t)(e - CFG_LEVEL0);
+    }
+    return (uint8_t)(cfg_is_pan(e) ? e - CFG_PAN0 : e - CFG_NOTE0);
+}
 
 static uint32_t cfg_list_len(void) {
     return cfg_group == CFG_GROUP_TOP ? CFG_TOP_LEN : NUM_SLOTS;
@@ -231,6 +278,7 @@ static uint32_t cfg_list_len(void) {
 static uint32_t cfg_list_entry(uint32_t i) {
     switch (cfg_group) {
         case CFG_GROUP_NOTES: return CFG_NOTE0 + i;
+        case CFG_GROUP_LEVEL: return CFG_LEVEL0 + i;
         case CFG_GROUP_PAN:   return CFG_PAN0 + i;
         default:              return CFG_TOP[i];
     }
@@ -238,11 +286,8 @@ static uint32_t cfg_list_entry(uint32_t i) {
 
 // Where the entry under the cursor sits in the list it belongs to.
 static uint32_t cfg_list_pos(void) {
-    if (cfg_is_note(cfg)) {
-        return cfg - CFG_NOTE0;
-    }
-    if (cfg_is_pan(cfg)) {
-        return cfg - CFG_PAN0;
+    if (cfg_is_note(cfg) || cfg_is_pan(cfg) || cfg_is_level(cfg)) {
+        return cfg_slot_of(cfg);
     }
     for (uint32_t i = 0; i < CFG_TOP_LEN; i++) {
         if (CFG_TOP[i] == cfg) {
@@ -277,13 +322,18 @@ static void cfg_range(uint32_t e, int32_t *lo, int32_t *hi, int32_t *step) {
             break;
         case CFG_VELOCITY: *lo = 0; *hi = 127; *step = 8; break;
         case CFG_DYNAMICS: *lo = 0; *hi = 3; break;  // position, OFF/LOW/MID/HIGH on the knob
+        case CFG_HAT_CHOKE: *lo = 0; *hi = 1; break;
         case CFG_CONTRAST: *lo = 0; *hi = 255; *step = 16; break;
         case CFG_BOOT:     *lo = 0; *hi = NUM_PRESETS; break;
-        case CFG_RESTORE:  *lo = 0; *hi = 1; break;
+        case CFG_RESET_SETTINGS:
+        case CFG_CLEAR_PRESETS:  *lo = 0; *hi = 1; break;
         default:
             if (cfg_is_pan(e)) {
                 *lo = MIXER_PAN_LEFT;
                 *hi = MIXER_PAN_RIGHT;
+            } else if (cfg_is_level(e)) {
+                *lo = 0;  // position, OFF .. 0dB on the knob
+                *hi = MIXER_LEVEL_OFF;
             } else {
                 *lo = 0;
                 *hi = 127;  // the note entries
@@ -304,13 +354,21 @@ static int32_t cfg_get(uint32_t e) {
         case CFG_DYNAMICS:
             return r->dynamics < 4 ? DYNAMICS_STORED_TO_POS[r->dynamics]
                                    : DYNAMICS_STORED_TO_POS[SETTINGS_DYNAMICS_MID];
+        case CFG_HAT_CHOKE: return r->hat_choke;
         case CFG_CONTRAST: return r->oled_contrast;
         case CFG_BOOT:
             return r->boot_preset == PRESET_NONE ? 0 : r->boot_preset + 1;
-        case CFG_RESTORE:  return 0;
+        case CFG_RESET_SETTINGS:
+        case CFG_CLEAR_PRESETS:  return 0;
         default:
             if (cfg_is_pan(e)) {
                 return r->slot_pan[e - CFG_PAN0];
+            }
+            if (cfg_is_level(e)) {
+                // Stored as attenuation so that zero is 0dB, turned as a
+                // fader: clockwise is louder, OFF at the bottom of the travel.
+                uint8_t a = r->slot_level[e - CFG_LEVEL0];
+                return MIXER_LEVEL_OFF - (a > MIXER_LEVEL_OFF ? MIXER_LEVEL_OFF : a);
             }
             if (cfg_is_note(e)) {
                 return r->slot_note[e - CFG_NOTE0];
@@ -330,14 +388,18 @@ static void cfg_set(uint32_t e, int32_t v) {
         case CFG_GAIN:     r->master_gain = (uint16_t)v; break;
         case CFG_VELOCITY: r->velocity_fixed = (uint8_t)v; break;
         case CFG_DYNAMICS: r->dynamics = DYNAMICS_POS_TO_STORED[v]; break;
+        case CFG_HAT_CHOKE: r->hat_choke = (uint8_t)v; break;
         case CFG_CONTRAST: r->oled_contrast = (uint8_t)v; break;
         case CFG_BOOT:
             r->boot_preset = (v == 0) ? PRESET_NONE : (uint8_t)(v - 1);
             break;
-        case CFG_RESTORE:  break;  // acted on when confirmed, not while turning
+        case CFG_RESET_SETTINGS:
+        case CFG_CLEAR_PRESETS:  break;  // acted on when confirmed, not while turning
         default:
             if (cfg_is_pan(e)) {
                 r->slot_pan[e - CFG_PAN0] = (int8_t)v;
+            } else if (cfg_is_level(e)) {
+                r->slot_level[e - CFG_LEVEL0] = (uint8_t)(MIXER_LEVEL_OFF - v);
             } else if (cfg_is_note(e)) {
                 r->slot_note[e - CFG_NOTE0] = (uint8_t)v;
             }
@@ -352,17 +414,18 @@ static const char *cfg_label(uint32_t e) {
         case CFG_GAIN:     return "GAIN";
         case CFG_VELOCITY: return "VELOCITY";
         case CFG_DYNAMICS: return "DYNAMICS";
+        case CFG_HAT_CHOKE: return "HAT CHOKE";
         case CFG_CONTRAST: return "CONTRAST";
         case CFG_BOOT:     return "BOOT";
-        case CFG_RESTORE:  return "RESTORE DEFAULTS";
+        case CFG_RESET_SETTINGS: return "RESET SETTINGS";
+        case CFG_CLEAR_PRESETS:  return "CLEAR PRESETS";
         case CFG_OPEN_NOTES: return "NOTES >";
+        case CFG_OPEN_LEVEL: return "LEVEL >";
         case CFG_OPEN_PAN:   return "PAN >";
         default:
-            // Inside a group the title bar already says NOTES or PAN, so the
+            // Inside a group the title bar already says which one, so the
             // role alone is the whole label.
-            snprintf(buf, sizeof buf, "%s",
-                     mixer_role_name((uint8_t)(cfg_is_pan(e) ? e - CFG_PAN0
-                                                             : e - CFG_NOTE0)));
+            snprintf(buf, sizeof buf, "%s", mixer_role_name(cfg_slot_of(e)));
             return buf;
     }
 }
@@ -393,6 +456,8 @@ static const char *cfg_text(uint32_t e, int32_t v) {
             static const char *const NAMES[4] = {"OFF", "LOW", "MID", "HIGH"};
             return (v >= 0 && v < 4) ? NAMES[v] : "?";
         }
+        case CFG_HAT_CHOKE:
+            return v ? "ON" : "OFF";
         case CFG_CONTRAST:
             snprintf(buf, sizeof buf, "%d", (int)v);
             return buf;
@@ -402,9 +467,11 @@ static const char *cfg_text(uint32_t e, int32_t v) {
             }
             snprintf(buf, sizeof buf, "PRESET %d", (int)v);
             return buf;
-        case CFG_RESTORE:
+        case CFG_RESET_SETTINGS:
+        case CFG_CLEAR_PRESETS:
             return v ? "YES" : "NO";
         case CFG_OPEN_NOTES:
+        case CFG_OPEN_LEVEL:
         case CFG_OPEN_PAN:
             return "";
         default: {
@@ -416,6 +483,15 @@ static const char *cfg_text(uint32_t e, int32_t v) {
                 }
                 snprintf(buf, sizeof buf, "%c%d", v < 0 ? 'L' : 'R',
                          (int)(v < 0 ? -v : v));
+                return buf;
+            }
+            if (cfg_is_level(e)) {
+                // dB from a table of 3dB steps, so no log and no libm.
+                if (v <= 0) {
+                    return "OFF";
+                }
+                snprintf(buf, sizeof buf, "%ddB",
+                         -(int)((MIXER_LEVEL_OFF - v) * MIXER_LEVEL_DB_STEP));
                 return buf;
             }
             char note[5];
@@ -534,7 +610,7 @@ static void step_cfg_value(int delta) {
     if (cfg_value > hi) {
         cfg_value = hi;
     }
-    if (cfg == CFG_RESTORE) {
+    if (cfg_is_reset(cfg)) {
         return;  // NO/YES: an answer, not a setting. Acted on when confirmed.
     }
     cfg_set(cfg, cfg_value);
@@ -674,8 +750,7 @@ void ui_event(EncoderEvent ev) {
                     if (cfg_is_group(cfg)) {
                         // Opening a group, not editing: the cursor lands on
                         // its first slot and the mode stays UI_CONFIG.
-                        cfg_group = (cfg == CFG_OPEN_NOTES) ? CFG_GROUP_NOTES
-                                                            : CFG_GROUP_PAN;
+                        cfg_group = cfg_row_group(cfg);
                         cfg = cfg_list_entry(0);
                         break;
                     }
@@ -683,13 +758,17 @@ void ui_event(EncoderEvent ev) {
                     mode = UI_CONFIG_EDIT;
                     break;
                 case UI_CONFIG_EDIT:
-                    // Restore is the one entry whose value is an answer rather
-                    // than a setting: it takes two deliberate gestures, turn to
-                    // YES and press, because it throws away every preset.
-                    if (cfg == CFG_RESTORE && cfg_value == 1) {
-                        settings_defaults(settings_get());
+                    // The resets are the entries whose value is an answer
+                    // rather than a setting: each takes two deliberate
+                    // gestures, turn to YES and press, because neither can be
+                    // undone once the page is left and saved.
+                    if (cfg == CFG_RESET_SETTINGS && cfg_value == 1) {
+                        settings_reset_config(settings_get());
                         apply_settings();
-                        set_msg("RESTORED");
+                        set_msg("SETTINGS RESET");
+                    } else if (cfg == CFG_CLEAR_PRESETS && cfg_value == 1) {
+                        settings_clear_presets(settings_get());
+                        set_msg("PRESETS CLEARED");
                     }
                     mode = UI_CONFIG;
                     break;
@@ -733,8 +812,7 @@ void ui_event(EncoderEvent ev) {
                         // group's own row. Nothing is saved yet: that happens
                         // on leaving the page, once, however many groups were
                         // visited on the way.
-                        cfg = (cfg_group == CFG_GROUP_NOTES) ? CFG_OPEN_NOTES
-                                                             : CFG_OPEN_PAN;
+                        cfg = cfg_group_row(cfg_group);
                         cfg_group = CFG_GROUP_TOP;
                         break;
                     }
@@ -748,7 +826,7 @@ void ui_event(EncoderEvent ev) {
                     mode = UI_SELECT;
                     break;
                 case UI_CONFIG_EDIT:
-                    if (cfg != CFG_RESTORE) {
+                    if (!cfg_is_reset(cfg)) {
                         cfg_set(cfg, cfg_undo);
                         apply_settings();
                     }
@@ -991,6 +1069,7 @@ static void render_save(uint32_t now_ms) {
 static const char *cfg_title(void) {
     switch (cfg_group) {
         case CFG_GROUP_NOTES: return "NOTES";
+        case CFG_GROUP_LEVEL: return "LEVEL";
         case CFG_GROUP_PAN:   return "PAN";
         default:              return "CONFIG";
     }

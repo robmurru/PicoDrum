@@ -25,8 +25,8 @@ typedef struct {
     const int16_t *base;
     uint32_t length;        // source samples
     uint32_t pos;           // in output frames
-    uint16_t gain_l;        // Q12, velocity x the slot's pan, left side
-    uint16_t gain_r;        // Q12, velocity x the slot's pan, right side
+    uint16_t gain_l;        // Q12, velocity x level x pan, left side
+    uint16_t gain_r;        // Q12, velocity x level x pan, right side
     uint16_t fade_out;      // fade-out frames left, 0 = not closing
     uint8_t  slot;
     bool     active;
@@ -38,6 +38,13 @@ static const SampleLib *library;
 static uint16_t master_gain = GAIN_UNITY / 2;  // -6dB of headroom
 static uint8_t dynamics_curve = 0;  // SETTINGS_DYNAMICS_MID, by value
 static int8_t slot_pan[NUM_SLOTS];  // MIXER_PAN_LEFT..MIXER_PAN_RIGHT, 0 = centre
+static uint8_t slot_level[NUM_SLOTS];  // attenuation steps, 0 = 0dB .. MIXER_LEVEL_OFF
+static bool hat_choke;
+
+// The two slots the hat choke ties together. Positional, like every role:
+// the order of SLOT_ROLE below is the layout of a kit.
+#define SLOT_CH 2
+#define SLOT_OH 3
 
 static volatile uint32_t st_triggers, st_chokes, st_steals, st_dropped;
 static volatile uint32_t st_active;
@@ -154,6 +161,13 @@ static void pan_gains(int8_t pan, uint32_t *l, uint32_t *r) {
     }
 }
 
+// Slot level, Q12, indexed by attenuation step: 10^(-3k/20) x 4096, rounded,
+// and the last entry silence. A table rather than a log, because nothing in
+// the render core touches a float.
+static const uint16_t LEVEL_Q12[MIXER_LEVEL_OFF + 1] = {
+    4096, 2900, 2053, 1453, 1029, 728, 516, 365, 258, 0,
+};
+
 static void do_trigger(uint8_t slot, uint8_t velocity) {
     if (slot >= NUM_SLOTS || library == NULL) {
         return;
@@ -164,21 +178,31 @@ static void do_trigger(uint8_t slot, uint8_t velocity) {
     }
 
     // Choke: the voice already playing on this slot fades out instead of
-    // vanishing at once. This is the Volca Drum behaviour.
+    // vanishing at once. This is the Volca Drum behaviour. With the hat choke
+    // on, CH and OH count as one slot for this, so either cuts the other.
+    bool hat = hat_choke && (slot == SLOT_CH || slot == SLOT_OH);
     for (int i = 0; i < MAX_VOICES; i++) {
         Voice *v = &voices[i];
-        if (v->active && v->slot == slot && v->fade_out == 0) {
+        bool mine = v->slot == slot ||
+                    (hat && (v->slot == SLOT_CH || v->slot == SLOT_OH));
+        if (v->active && mine && v->fade_out == 0) {
             v->fade_out = FADE_FRAMES;
             st_chokes++;
         }
     }
 
-    // The pan is read once, at the trigger, and folded into the voice's two
-    // gains: turning the knob moves the next hit, never a tail already
-    // sounding, so a change mid-note cannot step the level of a voice. Both
-    // voices of a choke belong to one slot, so they share a pan and their
-    // fades still sum to one on each side.
-    uint32_t gain = velocity_to_gain(velocity);
+    // Level and pan are read once, at the trigger, and folded into the
+    // voice's two gains: turning the knob moves the next hit, never a tail
+    // already sounding, so a change mid-note cannot step the level of a
+    // voice. Both voices of a same-slot choke share a level and a pan, so
+    // their fades still sum to one on each side; a hat choke crosses two
+    // different sounds, where there is no sum to keep and the fade is only
+    // there to avoid a click.
+    //
+    // A muted slot still takes a voice and still chokes: OFF means silent,
+    // not ignored. A hit on it cuts its own tail like any other hit, and with
+    // the hat choke on a muted CH still closes the open hat.
+    uint32_t gain = (velocity_to_gain(velocity) * LEVEL_Q12[slot_level[slot]]) >> 12;
     uint32_t pl, pr;
     pan_gains(slot_pan[slot], &pl, &pr);
 
@@ -234,7 +258,9 @@ void mixer_init(const void *lib) {
         slots[i].lib_index = -1;
         slots[i].midi_note = SLOT_NOTES[i];
         slot_pan[i] = 0;
+        slot_level[i] = 0;
     }
+    hat_choke = false;
     trig_head = trig_tail = 0;
     st_triggers = st_chokes = st_steals = st_dropped = st_active = 0;
 }
@@ -355,6 +381,20 @@ void mixer_set_slot_pan(uint8_t slot, int8_t pan) {
 
 int8_t mixer_slot_pan(uint8_t slot) {
     return slot < NUM_SLOTS ? slot_pan[slot] : 0;
+}
+
+void mixer_set_slot_level(uint8_t slot, uint8_t atten) {
+    if (slot < NUM_SLOTS) {
+        slot_level[slot] = atten > MIXER_LEVEL_OFF ? MIXER_LEVEL_OFF : atten;
+    }
+}
+
+uint8_t mixer_slot_level(uint8_t slot) {
+    return slot < NUM_SLOTS ? slot_level[slot] : 0;
+}
+
+void mixer_set_hat_choke(bool on) {
+    hat_choke = on;
 }
 
 int32_t mixer_slot_index(uint8_t slot) {

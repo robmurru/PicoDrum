@@ -538,6 +538,108 @@ int main(void) {
           left(out[200]), right(out[200]));
     printf("  pan across a choke         : no overshoot, new hit takes the new pan\n");
 
+    // --- slot level, 3dB steps ---
+    // Same reading as the pan: frame 100, a constant 1000, velocity 127, unity
+    // master. Each step is 10^(-3k/20) of it, rounded down by the Q12 maths.
+    struct { uint8_t atten; int lo, hi; } LEVEL_CASES[] = {
+        {0, 1000, 1000},                // 0dB: unity, as before level existed
+        {1, 707, 708},                  // -3dB
+        {2, 500, 501},                  // -6dB
+        {8, 62, 63},                    // -24dB, the last audible step
+        {MIXER_LEVEL_OFF, 0, 0},        // OFF
+    };
+    for (unsigned c = 0; c < sizeof LEVEL_CASES / sizeof LEVEL_CASES[0]; c++) {
+        setup(lib, 0, IDX_LONG);
+        mixer_set_slot_level(0, LEVEL_CASES[c].atten);
+        mixer_trigger_slot(0, 127);
+        mixer_render(out, 128);
+        int l = left(out[100]), r = right(out[100]);
+        CHECK(l == r && l >= LEVEL_CASES[c].lo && l <= LEVEL_CASES[c].hi,
+              "level step %u gave L=%d R=%d, expected %d..%d", LEVEL_CASES[c].atten,
+              l, r, LEVEL_CASES[c].lo, LEVEL_CASES[c].hi);
+    }
+    printf("  level                      : 0dB is unity, 3dB a step, OFF is silence\n");
+
+    // Level, pan and velocity all multiply: -6dB, hard right, half velocity
+    // is a quarter on the right and nothing on the left.
+    setup(lib, 0, IDX_LONG);
+    mixer_set_slot_level(0, 2);
+    mixer_set_slot_pan(0, MIXER_PAN_RIGHT);
+    mixer_trigger_slot(0, 64);
+    mixer_render(out, 128);
+    CHECK(left(out[100]) == 0, "-6dB hard right leaked %d onto the left", left(out[100]));
+    CHECK(right(out[100]) > 240 && right(out[100]) < 265,
+          "-6dB at velocity 64 hard right gave %d, expected ~250", right(out[100]));
+    printf("  level x pan x velocity     : the three gains multiply\n");
+
+    mixer_init(lib);
+    mixer_set_slot_level(0, 200);
+    CHECK(mixer_slot_level(0) == MIXER_LEVEL_OFF, "level 200 stored as %u",
+          mixer_slot_level(0));
+    CHECK(mixer_slot_level(1) == 0, "a fresh slot must start at 0dB");
+    printf("  level range                : clamped to OFF, 0dB at init\n");
+
+    // Read at the trigger, like the pan: muting a slot leaves the hit already
+    // sounding alone, and silences the next one.
+    setup(lib, 0, IDX_LONG);
+    mixer_trigger_slot(0, 127);
+    mixer_render(out, 128);
+    mixer_set_slot_level(0, MIXER_LEVEL_OFF);
+    mixer_render(out, 64);
+    CHECK(left(out[10]) == 1000, "a sounding voice changed level under it (%d)",
+          left(out[10]));
+    printf("  level change mid-note      : applies to the next hit only\n");
+
+    // A muted slot still chokes: OFF is silent, not ignored, so the next hit
+    // on it fades out the voice before rather than letting it ring on.
+    mixer_trigger_slot(0, 127);
+    mixer_render(out, 256);
+    mixer_get_stats(&st);
+    CHECK(st.chokes == 1, "a hit on a muted slot choked %u voices, expected 1",
+          st.chokes);
+    CHECK(left(out[200]) == 0 && right(out[200]) == 0,
+          "after a muted hit the slot still sounds: L=%d R=%d", left(out[200]),
+          right(out[200]));
+    printf("  muted slot                 : silent, and still chokes\n");
+
+    // --- hat choke ---
+    // OH rings, then CH is hit. Off (the 1.0 behaviour), both sound together
+    // and nothing is choked; on, the OH fades out and only the CH is left.
+    for (int on = 0; on <= 1; on++) {
+        setup(lib, 3, IDX_LONG);  // OH
+        mixer_assign_slot(2, IDX_LONG);  // CH
+        mixer_set_hat_choke(on);
+        mixer_trigger_slot(3, 127);
+        mixer_render(out, 256);
+        mixer_trigger_slot(2, 127);
+        mixer_render(out, 256);
+        mixer_get_stats(&st);
+        CHECK(st.chokes == (uint32_t)on, "hat choke %s: %u chokes", on ? "on" : "off",
+              st.chokes);
+        int expect = on ? 1000 : 2000;
+        CHECK(left(out[200]) == expect, "hat choke %s: %d after the CH, expected %d",
+              on ? "on" : "off", left(out[200]), expect);
+    }
+    printf("  hat choke                  : CH closes the OH when on, nothing when off\n");
+
+    // Both ways round, and nothing outside the pair: a kick under the hats
+    // keeps ringing when the OH cuts the CH.
+    setup(lib, 0, IDX_LONG);  // KICK
+    mixer_assign_slot(2, IDX_LONG);
+    mixer_assign_slot(3, IDX_LONG);
+    mixer_set_hat_choke(true);
+    mixer_trigger_slot(0, 127);
+    mixer_trigger_slot(2, 127);
+    mixer_render(out, 256);
+    mixer_trigger_slot(3, 127);
+    mixer_render(out, 256);
+    mixer_get_stats(&st);
+    CHECK(st.chokes == 1, "OH over CH and a kick choked %u voices, expected 1",
+          st.chokes);
+    CHECK(left(out[200]) == 2000, "expected the kick and the OH (2000), got %d",
+          left(out[200]));
+    printf("  hat choke scope            : both ways, only CH and OH\n");
+
     printf("\n%s (%d failures)\n", failures ? "FAILED" : "ALL OK", failures);
     return failures ? 1 : 0;
 }

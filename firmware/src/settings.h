@@ -25,9 +25,10 @@
 #include "mixer.h"  // NUM_SLOTS
 
 #define SETTINGS_MAGIC   0x54455343u  // 'CSET' little-endian
-// Version 2 (phase4) added slot_pan. A version-1 record is still read, and
-// converted on the way in: see settings_init().
-#define SETTINGS_VERSION 2
+// Version 2 (phase4, firmware 1.0) added slot_pan, version 3 (firmware 1.1)
+// slot_level. Records of versions 1 and 2 are still read, and converted on
+// the way in: see settings_init().
+#define SETTINGS_VERSION 3
 
 // Eight user presets, one per slot of the strip: the count is the number the
 // UI can address without a second level of browsing, not a flash limit.
@@ -89,8 +90,12 @@ typedef struct {
     uint16_t master_gain;  // Q12
     uint8_t  slot_note[NUM_SLOTS];
     uint8_t  dynamics;   // SETTINGS_DYNAMICS_*, was pad2[0]
-    uint8_t  pad2;        // was pad2[1], still zero, still available
+    uint8_t  hat_choke;   // 0 = off, 1 = CH and OH choke each other. Was pad2,
+                          // zero in every older record, so they read as off
     int8_t   slot_pan[NUM_SLOTS];  // MIXER_PAN_LEFT..MIXER_PAN_RIGHT, 0 = centre
+    // Attenuation in 3dB steps, 0 = 0dB .. MIXER_LEVEL_OFF. 0 is unity so a
+    // record converted from an older version, zero-filled, sounds unchanged.
+    uint8_t  slot_level[NUM_SLOTS];
 
     // --- user presets ---
     Preset preset[NUM_PRESETS];
@@ -98,7 +103,7 @@ typedef struct {
     uint32_t crc;  // over every byte before it
 } SettingsRecord;
 
-_Static_assert(sizeof(SettingsRecord) == 328, "settings record layout changed");
+_Static_assert(sizeof(SettingsRecord) == 336, "settings record layout changed");
 
 // The flash half. `read` returns a pointer to the sector's contents (on the
 // target an XIP pointer, in the tests a pointer into RAM) or NULL; `write`
@@ -114,6 +119,14 @@ typedef struct {
 // at boot. What the module comes up with when flash holds nothing valid.
 void settings_defaults(SettingsRecord *out);
 
+// The two halves of a factory reset, offered separately on the config page
+// since 1.1: one puts the configuration back (MIDI channel, gain, velocity,
+// dynamics, contrast, boot preset, notes, levels, pans) and keeps the eight
+// presets, the other empties the presets and keeps the configuration. Both
+// edit `r` in place and leave seq alone; nothing reaches flash until a save.
+void settings_reset_config(SettingsRecord *r);
+void settings_clear_presets(SettingsRecord *r);
+
 // Magic, version, size, CRC and range checks. False for virgin flash.
 bool settings_valid(const SettingsRecord *r);
 
@@ -123,10 +136,11 @@ void settings_seal(SettingsRecord *r);
 uint32_t settings_crc32(const void *data, uint32_t len);
 
 // Reads both sectors and adopts the newest valid record, or the defaults.
-// Returns true when a record really came out of flash. A version-1 record
-// (before pan existed) is converted in RAM with every slot centred, so an
-// upgrade keeps the presets and the note map; flash keeps the old record
-// until the next save rewrites it as version 2.
+// Returns true when a record really came out of flash. An older record is
+// converted in RAM, every slot centred (version 1, before pan existed) and at
+// 0dB (versions 1 and 2, before level existed), so an upgrade keeps the
+// presets and the note map; flash keeps the old record until the next save
+// rewrites it in the current version.
 bool settings_init(const SettingsBackend *backend);
 
 // The live copy, edited in place by the UI and the console. Changes only

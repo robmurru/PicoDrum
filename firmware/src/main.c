@@ -188,9 +188,11 @@ static void settings_apply(void) {
     midi_set_filter(&midi, r->midi_channel);
     mixer_set_master_gain(r->master_gain);
     mixer_set_dynamics(r->dynamics);
+    mixer_set_hat_choke(r->hat_choke != 0);
     for (uint8_t s = 0; s < NUM_SLOTS; s++) {
         mixer_set_slot_note(s, r->slot_note[s]);
         mixer_set_slot_pan(s, r->slot_pan[s]);
+        mixer_set_slot_level(s, r->slot_level[s]);
     }
     ssd1306_set_contrast(r->oled_contrast);
 }
@@ -246,6 +248,7 @@ static void print_settings(void) {
     static const char *const DYNAMICS_NAME[4] = {"mid", "off", "low", "high"};
     printf("  dynamics     : %s\n",
            r->dynamics < 4 ? DYNAMICS_NAME[r->dynamics] : "?");
+    printf("  hat choke    : %s\n", r->hat_choke ? "on" : "off");
     printf("  OLED contrast: %u\n", r->oled_contrast);
     if (r->boot_preset == PRESET_NONE) {
         printf("  boot preset  : none (kit 0)\n");
@@ -257,6 +260,16 @@ static void print_settings(void) {
         char n[5];
         ui_note_name(r->slot_note[sl], n);
         printf(" %s=%s", mixer_role_name(sl), n);
+    }
+    printf("\n");
+    printf("  level        :");
+    for (uint8_t sl = 0; sl < NUM_SLOTS; sl++) {
+        uint8_t a = r->slot_level[sl];
+        if (a >= MIXER_LEVEL_OFF) {
+            printf(" %s=OFF", mixer_role_name(sl));
+        } else {
+            printf(" %s=%ddB", mixer_role_name(sl), -(int)(a * MIXER_LEVEL_DB_STEP));
+        }
     }
     printf("\n");
     printf("  pan          :");
@@ -531,10 +544,16 @@ static void print_encoder_test(void) {
 
 static const char *ui_mode_name(void) {
     switch (ui_mode()) {
-        case UI_SELECT: return "select";
-        case UI_ASSIGN: return "assign";
-        case UI_KIT:    return "kit";
-        default:        return "?";
+        case UI_SELECT:      return "select";
+        case UI_ASSIGN:      return "assign";
+        case UI_KIT:         return "kit";
+        case UI_MENU:        return "menu";
+        case UI_PRESET:      return "preset";
+        case UI_SAVE:        return "save preset";
+        case UI_CONFIG:      return ui_config_depth() ? "config (group)" : "config";
+        case UI_CONFIG_EDIT: return "config edit";
+        case UI_ABOUT:       return "about";
+        default:             return "?";
     }
 }
 

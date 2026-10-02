@@ -759,34 +759,104 @@ static void test_config_cancel(void) {
     printf("  config cancel             : value restored, no pointless erase\n");
 }
 
-// The note map is editable, which is exactly what makes a restore necessary: a
+// The note map is editable, which is exactly what makes a reset necessary: a
 // slot moved to a note nothing sends is a silent module with no obvious way
-// back.
-static void test_config_restore(void) {
+// back. RESET SETTINGS puts the configuration back and keeps the presets.
+static void test_config_reset_settings(void) {
     setup_kits();
     settings_get()->slot_note[0] = 99;
     settings_get()->midi_channel = 3;
+    settings_get()->slot_level[2] = 4;
+    settings_get()->slot_pan[3] = -5;
     settings_get()->preset[0].used = 1;
+    settings_get()->preset[0].lib_index[0] = 17;
 
     open_menu(UI_MENU_CONFIG);
-    ui_event(ENC_CCW);  // the list wraps: RESTORE is the last entry
+    ui_event(ENC_CCW);  // the list wraps: CLEAR PRESETS is the last entry
+    ui_event(ENC_CCW);  // RESET SETTINGS just above it
     ui_event(ENC_PRESS);
-    CHECK(ui_mode() == UI_CONFIG_EDIT, "restore must ask before acting");
+    CHECK(ui_mode() == UI_CONFIG_EDIT, "the reset must ask before acting");
 
     // Left on NO it must do nothing at all.
     ui_event(ENC_PRESS);
-    CHECK(settings_get()->slot_note[0] == 99, "restore fired on NO");
+    CHECK(settings_get()->slot_note[0] == 99, "the reset fired on NO");
 
     ui_event(ENC_PRESS);
     ui_event(ENC_CW);  // NO -> YES
     ui_event(ENC_PRESS);
     CHECK(settings_get()->slot_note[0] == mixer_default_note(0),
-          "the note map was not restored (%u)", settings_get()->slot_note[0]);
-    CHECK(settings_get()->midi_channel == 9, "the channel was not restored (%u)",
+          "the note map was not reset (%u)", settings_get()->slot_note[0]);
+    CHECK(settings_get()->midi_channel == 9, "the channel was not reset (%u)",
           settings_get()->midi_channel);
-    CHECK(!settings_get()->preset[0].used, "restore left a preset behind");
+    CHECK(settings_get()->slot_level[2] == 0 && settings_get()->slot_pan[3] == 0,
+          "level %u / pan %d survived the reset", settings_get()->slot_level[2],
+          settings_get()->slot_pan[3]);
+    CHECK(settings_get()->preset[0].used && settings_get()->preset[0].lib_index[0] == 17,
+          "RESET SETTINGS threw a preset away");
+    CHECK(applies > 0, "the reset configuration was not pushed onto the module");
 
-    printf("  config restore            : two gestures, and it clears everything\n");
+    printf("  config reset settings     : two gestures, configuration only, presets kept\n");
+}
+
+// HAT CHOKE is a plain OFF/ON entry right after DYNAMICS, off by default,
+// applied while turning like every other entry.
+static void test_config_hat_choke(void) {
+    setup_kits();
+    CHECK(settings_get()->hat_choke == 0, "the hat choke must come up off");
+    open_menu(UI_MENU_CONFIG);
+    for (int i = 0; i < 4; i++) {
+        ui_event(ENC_CW);
+    }
+    CHECK(ui_config_index() == 4, "expected HAT CHOKE at 4, got %u", ui_config_index());
+    applies = 0;
+    ui_event(ENC_PRESS);
+    ui_event(ENC_CW);
+    CHECK(settings_get()->hat_choke == 1, "one detent did not turn it on");
+    CHECK(applies > 0, "the hat choke was not pushed onto the module");
+    ui_event(ENC_CW);
+    CHECK(settings_get()->hat_choke == 1, "ON is the end, it clamps (%u)",
+          settings_get()->hat_choke);
+    ui_event(ENC_PRESS);
+    int before = saves;
+    ui_event(ENC_LONG_PRESS);
+    CHECK(saves == before + 1, "leaving after HAT CHOKE did not save");
+
+    printf("  config hat choke          : OFF/ON after DYNAMICS, off by default\n");
+}
+
+// CLEAR PRESETS empties the eight presets and touches nothing else, except a
+// boot preset that would now point at nothing.
+static void test_config_clear_presets(void) {
+    setup_kits();
+    settings_get()->slot_note[0] = 99;
+    settings_get()->slot_level[2] = 4;
+    settings_get()->boot_preset = 0;
+    settings_get()->preset[0].used = 1;
+    settings_get()->preset[5].used = 1;
+
+    open_menu(UI_MENU_CONFIG);
+    ui_event(ENC_CCW);  // CLEAR PRESETS
+    ui_event(ENC_PRESS);
+    ui_event(ENC_PRESS);  // NO
+    CHECK(settings_get()->preset[0].used, "CLEAR PRESETS fired on NO");
+
+    ui_event(ENC_PRESS);
+    ui_event(ENC_CW);  // YES
+    ui_event(ENC_PRESS);
+    for (int p = 0; p < NUM_PRESETS; p++) {
+        CHECK(!settings_get()->preset[p].used, "preset %d survived CLEAR PRESETS", p + 1);
+    }
+    CHECK(settings_get()->boot_preset == PRESET_NONE,
+          "BOOT still points at cleared preset %u", settings_get()->boot_preset + 1u);
+    CHECK(settings_get()->slot_note[0] == 99 && settings_get()->slot_level[2] == 4,
+          "CLEAR PRESETS touched the configuration");
+
+    // And leaving the page saves it, like any other change.
+    int before = saves;
+    ui_event(ENC_LONG_PRESS);
+    CHECK(saves == before + 1, "leaving after CLEAR PRESETS did not save");
+
+    printf("  config clear presets      : presets emptied, configuration kept\n");
 }
 
 // DYNAMICS sits right after VELOCITY, at index 3. Its stored value is not the
@@ -828,7 +898,7 @@ static void test_config_dynamics(void) {
     printf("  config dynamics            : OFF/LOW/MID/HIGH on the knob, MID by default\n");
 }
 
-// NOTES and PAN are groups in the top list: a press opens the eight per-slot
+// NOTES, LEVEL and PAN are groups in the top list: a press opens the eight per-slot
 // entries, a long press comes back up to the group's own row, and only
 // leaving the page saves - once, however many groups were visited.
 static void test_config_groups(void) {
@@ -836,11 +906,13 @@ static void test_config_groups(void) {
     open_menu(UI_MENU_CONFIG);
     CHECK(ui_config_depth() == 0, "the settings must open on the top list");
 
-    // Top list: ... BOOT, NOTES >, PAN >, RESTORE. Backwards from the first
-    // entry wraps onto RESTORE, one more lands on PAN >.
+    // Top list: ... BOOT, NOTES >, LEVEL >, PAN >, RESET SETTINGS, CLEAR
+    // PRESETS. Backwards from the first entry wraps onto CLEAR PRESETS, two
+    // more land on PAN >.
     ui_event(ENC_CCW);
     ui_event(ENC_CCW);
-    CHECK(ui_config_index() == 7, "expected PAN > at 7, got %u", ui_config_index());
+    ui_event(ENC_CCW);
+    CHECK(ui_config_index() == 9, "expected PAN > at 9, got %u", ui_config_index());
 
     ui_event(ENC_PRESS);
     CHECK(ui_mode() == UI_CONFIG, "opening a group must not start an edit");
@@ -877,12 +949,49 @@ static void test_config_groups(void) {
     // Long press: one level up, back on PAN >, nothing saved yet.
     ui_event(ENC_LONG_PRESS);
     CHECK(ui_mode() == UI_CONFIG, "the long press left the page from a group");
-    CHECK(ui_config_depth() == 0 && ui_config_index() == 7,
+    CHECK(ui_config_depth() == 0 && ui_config_index() == 9,
           "back from PAN the cursor is at %u/depth %u", ui_config_index(),
           ui_config_depth());
     CHECK(saves == 0, "coming out of a group saved (%d)", saves);
 
-    // NOTES > is the entry just above, and edits the note map.
+    // LEVEL > is the entry just above. It turns like a fader: it opens at
+    // 0dB, clockwise is already the top, counter-clockwise goes down 3dB a
+    // detent and ends on OFF, stored as attenuation steps.
+    ui_event(ENC_CCW);
+    ui_event(ENC_PRESS);
+    CHECK(ui_config_depth() == 1, "the press did not open the LEVEL group");
+    CHECK(settings_get()->slot_level[0] == 0, "KICK must start at 0dB, got %u",
+          settings_get()->slot_level[0]);
+    ui_event(ENC_PRESS);
+    ui_event(ENC_CW);
+    CHECK(settings_get()->slot_level[0] == 0, "the level went above 0dB to %u",
+          settings_get()->slot_level[0]);
+    ui_event(ENC_CCW);
+    ui_event(ENC_CCW);
+    CHECK(settings_get()->slot_level[0] == 2, "two detents down stored %u, expected 2 (-6dB)",
+          settings_get()->slot_level[0]);
+    for (int i = 0; i < 20; i++) {
+        ui_event(ENC_CCW);
+    }
+    CHECK(settings_get()->slot_level[0] == MIXER_LEVEL_OFF,
+          "the bottom of the travel stored %u, expected OFF",
+          settings_get()->slot_level[0]);
+    ui_event(ENC_PRESS);
+    // A cancelled edit puts the old value back: SNARE, down one, long press.
+    ui_event(ENC_CW);
+    ui_event(ENC_PRESS);
+    ui_event(ENC_CCW);
+    CHECK(settings_get()->slot_level[1] == 1, "SNARE level %u while editing",
+          settings_get()->slot_level[1]);
+    ui_event(ENC_LONG_PRESS);
+    CHECK(settings_get()->slot_level[1] == 0, "cancel left SNARE at %u",
+          settings_get()->slot_level[1]);
+    ui_event(ENC_LONG_PRESS);
+    CHECK(ui_config_depth() == 0 && ui_config_index() == 8,
+          "back from LEVEL the cursor is at %u/depth %u", ui_config_index(),
+          ui_config_depth());
+
+    // NOTES > is the entry above that, and edits the note map.
     ui_event(ENC_CCW);
     ui_event(ENC_PRESS);
     CHECK(ui_config_depth() == 1, "the press did not open the NOTES group");
@@ -893,24 +1002,27 @@ static void test_config_groups(void) {
     CHECK(settings_get()->slot_note[0] == before + 1, "KICK note %u, expected %u",
           settings_get()->slot_note[0], before + 1);
     ui_event(ENC_LONG_PRESS);
-    CHECK(ui_config_index() == 6, "back from NOTES the cursor is at %u",
+    CHECK(ui_config_index() == 7, "back from NOTES the cursor is at %u",
           ui_config_index());
 
     // Leaving the page saves both groups' changes in one write.
     ui_event(ENC_LONG_PRESS);
     CHECK(ui_mode() == UI_SELECT, "the long press at the top must leave");
-    CHECK(saves == 1, "leaving after two groups saved %d times", saves);
+    CHECK(saves == 1, "leaving after three groups saved %d times", saves);
 
-    // And RESTORE puts every slot back in the centre.
+    // And RESET SETTINGS puts every slot back in the centre and at 0dB.
     open_menu(UI_MENU_CONFIG);
-    ui_event(ENC_CCW);  // RESTORE
+    ui_event(ENC_CCW);
+    ui_event(ENC_CCW);  // RESET SETTINGS
     ui_event(ENC_PRESS);
     ui_event(ENC_CW);
     ui_event(ENC_PRESS);
     CHECK(settings_get()->slot_pan[1] == 0, "restore left SNARE panned %d",
           settings_get()->slot_pan[1]);
+    CHECK(settings_get()->slot_level[0] == 0, "restore left KICK at level %u",
+          settings_get()->slot_level[0]);
 
-    printf("  config groups             : NOTES and PAN open, come back, save once\n");
+    printf("  config groups             : NOTES, LEVEL and PAN open, come back, save once\n");
 }
 
 // Inside a group the title bar names it, and the entries are the slot roles.
@@ -921,11 +1033,12 @@ static void test_render_config_group(void) {
     int top_title = pixels_in_band(0, 8);
 
     ui_event(ENC_CCW);
+    ui_event(ENC_CCW);
     ui_event(ENC_CCW);  // PAN >
     ui_event(ENC_PRESS);
     ui_render(0);
     int pan_title = pixels_in_band(0, 8);
-    // "PAN 1/8" is fewer glyphs than "CONFIG 1/9", and the bar is inverted,
+    // "PAN 1/8" is fewer glyphs than "CONFIG 1/12", and the bar is inverted,
     // so it lights more pixels: the title changed, whichever way round.
     CHECK(pan_title != top_title, "the title bar did not change inside PAN");
     CHECK(pixels_in_band(TEST_ROW_CFG_VALUE, 8) > 0, "the pan value row is blank");
@@ -1048,7 +1161,9 @@ int main(void) {
     test_config_edit();
     test_config_cancel();
     test_config_dynamics();
-    test_config_restore();
+    test_config_hat_choke();
+    test_config_reset_settings();
+    test_config_clear_presets();
     test_render_config();
     test_config_groups();
     test_render_config_group();

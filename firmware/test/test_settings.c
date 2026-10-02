@@ -79,6 +79,8 @@ static void test_defaults(void) {
     for (uint8_t s = 0; s < NUM_SLOTS; s++) {
         CHECK(r.slot_pan[s] == 0, "slot %u must come up centred, got %d", s,
               r.slot_pan[s]);
+        CHECK(r.slot_level[s] == 0, "slot %u must come up at 0dB, got %u", s,
+              r.slot_level[s]);
     }
     for (uint8_t p = 0; p < NUM_PRESETS; p++) {
         CHECK(r.preset[p].used == 0, "preset %u must come up empty", p);
@@ -268,6 +270,25 @@ static void test_range_checks(void) {
     CHECK(!settings_valid(&r), "a pan past hard left is refused");
 
     settings_defaults(&r);
+    CHECK(r.hat_choke == 0, "the hat choke must come up off");
+    r.hat_choke = 1;
+    settings_seal(&r);
+    CHECK(settings_valid(&r), "hat choke on must be legal");
+    r.hat_choke = 2;
+    settings_seal(&r);
+    CHECK(!settings_valid(&r), "a hat choke of 2 is refused");
+
+    settings_defaults(&r);
+    r.slot_level[5] = MIXER_LEVEL_OFF;
+    settings_seal(&r);
+    CHECK(settings_valid(&r), "OFF is the end of the level range and must be legal");
+
+    settings_defaults(&r);
+    r.slot_level[5] = MIXER_LEVEL_OFF + 1;
+    settings_seal(&r);
+    CHECK(!settings_valid(&r), "a level past OFF is refused");
+
+    settings_defaults(&r);
     r.preset[0].lib_index[0] = -2;
     settings_seal(&r);
     CHECK(!settings_valid(&r), "-1 is the only legal negative index");
@@ -336,6 +357,8 @@ static void test_upgrade_from_v1(void) {
         CHECK(r->slot_note[s] == 60 + s, "slot %u note %u after upgrade", s,
               r->slot_note[s]);
         CHECK(r->slot_pan[s] == 0, "slot %u came up panned %d", s, r->slot_pan[s]);
+        CHECK(r->slot_level[s] == 0, "slot %u came up at level %u", s,
+              r->slot_level[s]);
     }
     CHECK(r->preset[2].used && r->preset[2].lib_index[7] == 23,
           "preset 3 did not survive the upgrade");
@@ -345,15 +368,15 @@ static void test_upgrade_from_v1(void) {
     // not worth an erase and its audio gap.
     CHECK(!settings_dirty(), "an untouched upgraded record reads as dirty");
 
-    // The first real save writes version 2 to the other sector and wins.
+    // The first real save writes the current version to the other sector.
     settings_get()->slot_pan[0] = -4;
     CHECK(settings_save(), "the first save after an upgrade failed");
     CHECK(writes[1] == 1 && writes[0] == 0, "the save did not go to the other sector");
     CHECK(settings_valid((const SettingsRecord *)fake[1]),
-          "what was written is not a valid version-2 record");
+          "what was written is not a valid current-version record");
     settings_init(&BACKEND);
     CHECK(settings_get()->slot_pan[0] == -4 && settings_get()->preset[2].used,
-          "the version-2 save did not come back after a reboot");
+          "the save after the upgrade did not come back after a reboot");
 
     // Between an old v1 and a newer v1, the newer wins, as between two v2s.
     fake_erase_all();
@@ -367,6 +390,151 @@ static void test_upgrade_from_v1(void) {
     write_v1(0, 1, 3);
     fake[0][20] ^= 0x01;
     CHECK(!settings_init(&BACKEND), "a corrupt v1 record was accepted");
+}
+
+// The firmware 1.0 record, 328 bytes and version 2: the v1 layout plus the
+// pan. Built by hand for the same reason as the one above.
+typedef struct {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t size;
+    uint32_t seq;
+    uint8_t  midi_channel, boot_preset, velocity_fixed, oled_contrast;
+    uint16_t master_gain;
+    uint8_t  slot_note[NUM_SLOTS];
+    uint8_t  dynamics, pad2;
+    int8_t   slot_pan[NUM_SLOTS];
+    Preset   preset[NUM_PRESETS];
+    uint32_t crc;
+} V2Record;
+
+static void write_v2(uint32_t sector, uint32_t seq, uint8_t channel) {
+    V2Record o;
+    memset(&o, 0, sizeof o);
+    o.magic = SETTINGS_MAGIC;
+    o.version = 2;
+    o.size = 328;
+    o.seq = seq;
+    o.midi_channel = channel;
+    o.boot_preset = 1;
+    o.velocity_fixed = 90;
+    o.oled_contrast = 0x30;
+    o.master_gain = 2048;
+    for (uint8_t s = 0; s < NUM_SLOTS; s++) {
+        o.slot_note[s] = (uint8_t)(40 + s);
+        o.slot_pan[s] = (int8_t)(s - 4);
+    }
+    o.dynamics = SETTINGS_DYNAMICS_LOW;
+    for (uint8_t p = 0; p < NUM_PRESETS; p++) {
+        o.preset[p].used = (p == 5);
+        for (uint8_t s = 0; s < NUM_SLOTS; s++) {
+            o.preset[p].lib_index[s] = (p == 5) ? 40 + s : -1;
+        }
+    }
+    o.crc = settings_crc32(&o, (uint32_t)offsetof(V2Record, crc));
+    memset(fake[sector], 0xFF, FAKE_SECTOR_SIZE);
+    memcpy(fake[sector], &o, sizeof o);
+}
+
+// Upgrading from 1.0 to 1.1 must keep the pan as well as everything a v1
+// record already had, and bring every slot up at 0dB: the module sounds the
+// way it did until LEVEL is touched.
+static void test_upgrade_from_v2(void) {
+    CHECK(sizeof(V2Record) == 328, "the test's own v2 layout is %zu bytes",
+          sizeof(V2Record));
+
+    fake_erase_all();
+    write_v2(1, 9, 9);
+    CHECK(settings_init(&BACKEND), "a version-2 record was not recognised");
+    CHECK(!settings_is_default(), "reported as defaults after an upgrade");
+    const SettingsRecord *r = settings_get();
+    CHECK(r->midi_channel == 9 && r->boot_preset == 1 && r->velocity_fixed == 90 &&
+              r->oled_contrast == 0x30 && r->master_gain == 2048 &&
+              r->dynamics == SETTINGS_DYNAMICS_LOW,
+          "a configuration field was lost in the upgrade");
+    for (uint8_t s = 0; s < NUM_SLOTS; s++) {
+        CHECK(r->slot_note[s] == 40 + s, "slot %u note %u after upgrade", s,
+              r->slot_note[s]);
+        CHECK(r->slot_pan[s] == s - 4, "slot %u pan %d after upgrade, expected %d",
+              s, r->slot_pan[s], s - 4);
+        CHECK(r->slot_level[s] == 0, "slot %u came up at level %u", s,
+              r->slot_level[s]);
+    }
+    CHECK(r->hat_choke == 0, "a 1.0 record came up with the hat choke on");
+    CHECK(r->preset[5].used && r->preset[5].lib_index[0] == 40,
+          "preset 6 did not survive the upgrade");
+    CHECK(!settings_dirty(), "an untouched upgraded record reads as dirty");
+
+    // The first save goes to the other sector, here sector 0, as version 3.
+    settings_get()->slot_level[2] = 4;
+    CHECK(settings_save(), "the first save after an upgrade failed");
+    CHECK(writes[0] == 1 && writes[1] == 0, "the save did not go to the other sector");
+    CHECK(settings_valid((const SettingsRecord *)fake[0]) &&
+              ((const SettingsRecord *)fake[0])->version == 3,
+          "what was written is not a valid version-3 record");
+    settings_init(&BACKEND);
+    CHECK(settings_get()->slot_level[2] == 4 && settings_get()->slot_pan[7] == 3,
+          "the version-3 save did not come back after a reboot");
+
+    // Two versions side by side, as after a phase3 module was saved once on
+    // 1.0: the newer seq wins whatever version each was written as.
+    fake_erase_all();
+    write_v1(0, 3, 4);
+    write_v2(1, 4, 6);
+    settings_init(&BACKEND);
+    CHECK(settings_get()->midi_channel == 6, "the older v1 beat the newer v2");
+
+    // A rotten v2 is refused, and is not mistaken for anything else.
+    fake_erase_all();
+    write_v2(0, 1, 3);
+    fake[0][30] ^= 0x01;
+    CHECK(!settings_init(&BACKEND), "a corrupt v2 record was accepted");
+}
+
+// The two halves of the old RESTORE DEFAULTS, each leaving the other half
+// alone.
+static void test_resets(void) {
+    SettingsRecord r;
+    settings_defaults(&r);
+    r.seq = 41;
+    r.midi_channel = 2;
+    r.master_gain = 1024;
+    r.oled_contrast = 0x10;
+    r.dynamics = SETTINGS_DYNAMICS_HIGH;
+    r.slot_note[1] = 70;
+    r.slot_level[1] = 5;
+    r.slot_pan[1] = 3;
+    r.boot_preset = 4;
+    r.preset[4].used = 1;
+    r.preset[4].lib_index[2] = 33;
+
+    SettingsRecord a = r;
+    settings_reset_config(&a);
+    SettingsRecord def;
+    settings_defaults(&def);
+    CHECK(a.midi_channel == def.midi_channel && a.master_gain == def.master_gain &&
+              a.oled_contrast == def.oled_contrast && a.dynamics == def.dynamics &&
+              a.boot_preset == PRESET_NONE,
+          "reset_config left a global setting behind");
+    CHECK(a.slot_note[1] == mixer_default_note(1) && a.slot_level[1] == 0 &&
+              a.slot_pan[1] == 0,
+          "reset_config left a per-slot setting behind");
+    CHECK(a.preset[4].used && a.preset[4].lib_index[2] == 33,
+          "reset_config lost a preset");
+    CHECK(a.seq == 41, "reset_config moved seq to %u", a.seq);
+    CHECK(settings_valid(&a), "reset_config left an invalid record");
+
+    SettingsRecord b = r;
+    settings_clear_presets(&b);
+    for (uint8_t p = 0; p < NUM_PRESETS; p++) {
+        CHECK(!b.preset[p].used && b.preset[p].lib_index[2] == -1,
+              "clear_presets left preset %u", p + 1u);
+    }
+    CHECK(b.boot_preset == PRESET_NONE, "clear_presets left BOOT on a cleared preset");
+    CHECK(b.midi_channel == 2 && b.master_gain == 1024 && b.slot_note[1] == 70 &&
+              b.slot_level[1] == 5 && b.slot_pan[1] == 3,
+          "clear_presets touched the configuration");
+    CHECK(settings_valid(&b), "clear_presets left an invalid record");
 }
 
 static void test_dirty(void) {
@@ -413,6 +581,8 @@ int main(void) {
     test_foreign_record_refused();
     test_range_checks();
     test_upgrade_from_v1();
+    test_upgrade_from_v2();
+    test_resets();
     test_dirty();
     test_write_failure_keeps_flash();
 

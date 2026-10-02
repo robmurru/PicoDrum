@@ -90,6 +90,22 @@ void mixer_set_slot_note(uint8_t slot, uint8_t midi_note);
 #define MIXER_PAN_RIGHT 8
 void mixer_set_slot_pan(uint8_t slot, int8_t pan);
 int8_t mixer_slot_pan(uint8_t slot);
+
+// Level of a slot, as an attenuation in steps of 3dB: 0 is 0dB (unity, how
+// the module sounded before level existed), 8 is -24dB, MIXER_LEVEL_OFF mutes
+// the slot. Attenuation only, like the master gain: above unity the sum clips,
+// and a sample that is too quiet is raised in the loader, not here. Clamped,
+// read at the trigger like the pan. From core0.
+#define MIXER_LEVEL_DB_STEP 3
+#define MIXER_LEVEL_OFF     9
+void mixer_set_slot_level(uint8_t slot, uint8_t atten);
+uint8_t mixer_slot_level(uint8_t slot);
+
+// Hat choke: when on, CH and OH behave as one instrument, so a hit on either
+// fades out whatever the other is playing, as a closing hi-hat cuts its own
+// open ring. Off (the default, and how 1.0 behaved), each slot only chokes
+// itself. From core0.
+void mixer_set_hat_choke(bool on);
 const char *mixer_slot_name(uint8_t slot);
 
 // Slot state, for the UI. -1 = slot with no sample assigned.
